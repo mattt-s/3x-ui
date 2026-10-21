@@ -81,9 +81,7 @@ Updating preserves your database and settings. Take a
 [backup](/docs/operations/backup-restore) before a major-version jump.
 
 <Callout type="info">
-  Docker users update differently — pull the new image and recreate the
-  container (`docker compose pull && docker compose up -d`) rather than using the
-  `x-ui` update commands.
+  Docker users rebuild this fork and recreate the container (`git pull && docker compose up -d --build`) instead of using the `x-ui` update commands. Keep the database and certificate volumes.
 </Callout>
 
 ## Uninstalling

@@ -11,19 +11,15 @@ export interface InstallOptions {
   webBasePath: string;
 }
 
-const REPO_RAW = 'https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh';
-const IMAGE = 'ghcr.io/mhsanaei/3x-ui:latest';
+const REPO_RAW = 'https://raw.githubusercontent.com/mattt-s/3x-ui/main/install.sh';
+const IMAGE = '3x-ui-no-panel-ads:local';
 
 function isLatest(version: string): boolean {
   const v = version.trim().toLowerCase();
   return v === '' || v === 'latest';
 }
 
-/**
- * The one-line script install command. The master install script reads the
- * version as its first argument: empty = latest stable release, a tag like
- * `v3.4.0` = that release, and `dev-latest` = the rolling per-commit dev build.
- */
+// The main installer accepts a release tag or dev-latest; empty selects stable.
 export function buildScriptCommand(options: InstallOptions): string {
   if (isLatest(options.version)) {
     return `bash <(curl -Ls ${REPO_RAW})`;
@@ -45,7 +41,10 @@ export function buildDockerRun(options: InstallOptions): string {
   lines.push(`  --restart=unless-stopped`);
   lines.push(`  --name 3x-ui`);
   lines.push(`  ${IMAGE}`);
-  return lines.join(' \\\n');
+  return (
+    'docker build -t 3x-ui-no-panel-ads:local https://github.com/mattt-s/3x-ui.git#main\n' +
+    lines.join(' \\\n')
+  );
 }
 
 /** A `docker-compose.yml` reflecting the chosen options. */
@@ -61,6 +60,7 @@ export function buildDockerCompose(options: InstallOptions): string {
   return [
     `services:`,
     `  3x-ui:`,
+    `    build: https://github.com/mattt-s/3x-ui.git#main`,
     `    image: ${IMAGE}`,
     `    container_name: 3x-ui`,
     `    volumes:`,

@@ -81,9 +81,7 @@ x-ui
 [备份](/docs/operations/backup-restore)。
 
 <Callout type="info">
-  Docker 用户的更新方式不同——拉取新镜像并重新创建容器
-  （`docker compose pull && docker compose up -d`），而不是使用
-  `x-ui` 更新命令。
+  Docker 用户应拉取本分支代码并重新构建容器（`git pull && docker compose up -d --build`），保留数据库和证书卷，不使用 `x-ui` 更新命令。
 </Callout>
 
 ## 卸载

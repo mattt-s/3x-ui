@@ -114,37 +114,36 @@ jobs:
           mkdir x-ui/bin
           cd x-ui/bin
 
-          # Download dependencies
-          Xray_URL="https://github.com/XTLS/Xray-core/releases/download/v26.10.10/"
-          if [ "${{ matrix.platform }}" == "amd64" ]; then
-            fetch ${Xray_URL}Xray-linux-64.zip
-            unzip Xray-linux-64.zip
-            rm -f Xray-linux-64.zip
-          elif [ "${{ matrix.platform }}" == "arm64" ]; then
-            fetch ${Xray_URL}Xray-linux-arm64-v8a.zip
-            unzip Xray-linux-arm64-v8a.zip
-            rm -f Xray-linux-arm64-v8a.zip
-          elif [ "${{ matrix.platform }}" == "armv7" ]; then
-            fetch ${Xray_URL}Xray-linux-arm32-v7a.zip
-            unzip Xray-linux-arm32-v7a.zip
-            rm -f Xray-linux-arm32-v7a.zip
-          elif [ "${{ matrix.platform }}" == "armv6" ]; then
-            fetch ${Xray_URL}Xray-linux-arm32-v6.zip
-            unzip Xray-linux-arm32-v6.zip
-            rm -f Xray-linux-arm32-v6.zip
-          elif [ "${{ matrix.platform }}" == "386" ]; then
-            fetch ${Xray_URL}Xray-linux-32.zip
-            unzip Xray-linux-32.zip
-            rm -f Xray-linux-32.zip
-          elif [ "${{ matrix.platform }}" == "armv5" ]; then
-            fetch ${Xray_URL}Xray-linux-arm32-v5.zip
-            unzip Xray-linux-arm32-v5.zip
-            rm -f Xray-linux-arm32-v5.zip
-          elif [ "${{ matrix.platform }}" == "s390x" ]; then
-            fetch ${Xray_URL}Xray-linux-s390x.zip
-            unzip Xray-linux-s390x.zip
-            rm -f Xray-linux-s390x.zip
+          # Keep the pinned core; recover it from our verified prior build if upstream removed it.
+          case "${{ matrix.platform }}" in
+            amd64) XRAY_ARCH=64 ;;
+            arm64) XRAY_ARCH=arm64-v8a ;;
+            armv7) XRAY_ARCH=arm32-v7a ;;
+            armv6) XRAY_ARCH=arm32-v6 ;;
+            386) XRAY_ARCH=32 ;;
+            armv5) XRAY_ARCH=arm32-v5 ;;
+            s390x) XRAY_ARCH=s390x ;;
+          esac
+          XRAY_ASSET="Xray-linux-${XRAY_ARCH}.zip"
+          XRAY_URL="https://github.com/XTLS/Xray-core/releases/download/v26.10.10/${XRAY_ASSET}"
+          HTTP_CODE=$(curl -sSL --retry 3 --retry-delay 3 -o "$XRAY_ASSET" -w '%{http_code}' "$XRAY_URL")
+          if [ "$HTTP_CODE" = 200 ]; then
+            unzip "$XRAY_ASSET"
+          elif [ "$HTTP_CODE" = 404 ]; then
+            RUNTIME_ASSET="x-ui-linux-${{ matrix.platform }}.tar.gz"
+            RUNTIME_URL="https://github.com/${{ github.repository }}/releases/download/dev-latest/${RUNTIME_ASSET}"
+            mkdir runtime-cache
+            curl -sfL $CURL_RETRY "$RUNTIME_URL" -o "runtime-cache/$RUNTIME_ASSET"
+            curl -sfL $CURL_RETRY "$RUNTIME_URL.sha256" -o "runtime-cache/$RUNTIME_ASSET.sha256"
+            (cd runtime-cache && sha256sum -c "$RUNTIME_ASSET.sha256")
+            tar -xzf "runtime-cache/$RUNTIME_ASSET" -C runtime-cache "x-ui/bin/xray-linux-${{ matrix.platform }}"
+            cp "runtime-cache/x-ui/bin/xray-linux-${{ matrix.platform }}" xray
+            rm -rf runtime-cache
+          else
+            echo "Xray download failed with HTTP $HTTP_CODE"
+            exit 1
           fi
+          rm -f "$XRAY_ASSET"
           rm -f geoip.dat geosite.dat
           fetch https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
           fetch https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
@@ -284,9 +283,24 @@ jobs:
 
           # Download Xray for Windows
           $Xray_URL = "https://github.com/XTLS/Xray-core/releases/download/v26.10.10/"
-          Invoke-WebRequest @retry -Uri "${Xray_URL}Xray-windows-64.zip" -OutFile "Xray-windows-64.zip"
-          Expand-Archive -Path "Xray-windows-64.zip" -DestinationPath .
-          Remove-Item "Xray-windows-64.zip"
+          try {
+            Invoke-WebRequest @retry -Uri "${Xray_URL}Xray-windows-64.zip" -OutFile "Xray-windows-64.zip"
+            Expand-Archive -Path "Xray-windows-64.zip" -DestinationPath .
+          } catch {
+            if ([int]$_.Exception.Response.StatusCode -ne 404) { throw }
+            $runtimeAsset = "x-ui-windows-amd64.zip"
+            $runtimeUrl = "https://github.com/${{ github.repository }}/releases/download/dev-latest/$runtimeAsset"
+            Invoke-WebRequest @retry -Uri $runtimeUrl -OutFile $runtimeAsset
+            Invoke-WebRequest @retry -Uri "$runtimeUrl.sha256" -OutFile "$runtimeAsset.sha256"
+            $expected = ((Get-Content "$runtimeAsset.sha256" -Raw).Trim() -split '\s+')[0]
+            $actual = (Get-FileHash $runtimeAsset -Algorithm SHA256).Hash.ToLower()
+            if ($actual -ne $expected) { throw "Cached runtime checksum mismatch" }
+            Expand-Archive -Path $runtimeAsset -DestinationPath runtime-cache
+            Copy-Item runtime-cache/x-ui/bin/xray-windows-amd64.exe xray.exe
+            Remove-Item -Recurse -Force runtime-cache
+            Remove-Item $runtimeAsset, "$runtimeAsset.sha256"
+          }
+          Remove-Item "Xray-windows-64.zip" -ErrorAction SilentlyContinue
           Remove-Item geoip.dat, geosite.dat -ErrorAction SilentlyContinue
           Invoke-WebRequest @retry -Uri "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" -OutFile "geoip.dat"
           Invoke-WebRequest @retry -Uri "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" -OutFile "geosite.dat"
